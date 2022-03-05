@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	minimumEntriesInShard = 10 // Minimum number of entries in single shard
+	minimumEntriesInShard = 10 // Minimum number of entries in single shard 单个分片中的最小条目数
 )
 
 // BigCache is fast, concurrent, evicting cache created to keep big number of entries without impact on performance.
@@ -15,9 +15,9 @@ const (
 type BigCache struct {
 	shards     []*cacheShard
 	lifeWindow uint64
-	clock      clock
-	hash       Hasher
-	config     Config
+	clock      clock  // 时钟
+	hash       Hasher // hash函数
+	config     Config // 配置项
 	shardMask  uint64
 	close      chan struct{}
 }
@@ -59,6 +59,7 @@ func newBigCache(config Config, clock clock) (*BigCache, error) {
 		return nil, fmt.Errorf("HardMaxCacheSize must be >= 0")
 	}
 
+	// 设置hash函数
 	if config.Hasher == nil {
 		config.Hasher = newDefaultHasher()
 	}
@@ -84,10 +85,12 @@ func newBigCache(config Config, clock clock) (*BigCache, error) {
 		onRemove = cache.notProvidedOnRemove
 	}
 
+	// 初始化各个分片
 	for i := 0; i < config.Shards; i++ {
 		cache.shards[i] = initNewShard(config, onRemove, clock)
 	}
 
+	// 定时清理
 	if config.CleanWindow > 0 {
 		go func() {
 			ticker := time.NewTicker(config.CleanWindow)
@@ -109,6 +112,7 @@ func newBigCache(config Config, clock clock) (*BigCache, error) {
 // Close is used to signal a shutdown of the cache when you are done with it.
 // This allows the cleaning goroutines to exit and ensures references are not
 // kept to the cache preventing GC of the entire cache.
+// Close用于在完成缓存时发出关闭缓存的信号。这允许清理gorroutines退出，并确保对缓存的引用不被保留，从而防止整个缓存的GC。
 func (c *BigCache) Close() error {
 	close(c.close)
 	return nil
@@ -117,6 +121,7 @@ func (c *BigCache) Close() error {
 // Get reads entry for the key.
 // It returns an ErrEntryNotFound when
 // no entry exists for the given key.
+// Get为键读取条目。当给定键的条目不存在时，它返回一个ErrEntryNotFound。
 func (c *BigCache) Get(key string) ([]byte, error) {
 	hashedKey := c.hash.Sum64(key)
 	shard := c.getShard(hashedKey)
@@ -126,6 +131,7 @@ func (c *BigCache) Get(key string) ([]byte, error) {
 // GetWithInfo reads entry for the key with Response info.
 // It returns an ErrEntryNotFound when
 // no entry exists for the given key.
+// GetWithInfo读取带有Response info的key的条目。当给定键的条目不存在时，它返回一个ErrEntryNotFound。
 func (c *BigCache) GetWithInfo(key string) ([]byte, Response, error) {
 	hashedKey := c.hash.Sum64(key)
 	shard := c.getShard(hashedKey)
@@ -133,6 +139,7 @@ func (c *BigCache) GetWithInfo(key string) ([]byte, Response, error) {
 }
 
 // Set saves entry under the key
+// Set 保存键下的条目
 func (c *BigCache) Set(key string, entry []byte) error {
 	hashedKey := c.hash.Sum64(key)
 	shard := c.getShard(hashedKey)
@@ -142,6 +149,7 @@ func (c *BigCache) Set(key string, entry []byte) error {
 // Append appends entry under the key if key exists, otherwise
 // it will set the key (same behaviour as Set()). With Append() you can
 // concatenate multiple entries under the same key in an lock optimized way.
+// 如果key存在，则将条目追加到key下，否则它将设置key(与set()的行为相同)。使用Append()，您可以以锁优化的方式将同一个键下的多个条目连接起来。
 func (c *BigCache) Append(key string, entry []byte) error {
 	hashedKey := c.hash.Sum64(key)
 	shard := c.getShard(hashedKey)
@@ -149,6 +157,7 @@ func (c *BigCache) Append(key string, entry []byte) error {
 }
 
 // Delete removes the key
+// 删除键
 func (c *BigCache) Delete(key string) error {
 	hashedKey := c.hash.Sum64(key)
 	shard := c.getShard(hashedKey)
@@ -156,6 +165,7 @@ func (c *BigCache) Delete(key string) error {
 }
 
 // Reset empties all cache shards
+// 重置各个分片
 func (c *BigCache) Reset() error {
 	for _, shard := range c.shards {
 		shard.reset(c.config)
@@ -164,6 +174,7 @@ func (c *BigCache) Reset() error {
 }
 
 // Len computes number of entries in cache
+// Len计算缓存中的条目数
 func (c *BigCache) Len() int {
 	var len int
 	for _, shard := range c.shards {
@@ -173,6 +184,7 @@ func (c *BigCache) Len() int {
 }
 
 // Capacity returns amount of bytes store in the cache.
+// 返回缓存中存储的字节数。
 func (c *BigCache) Capacity() int {
 	var len int
 	for _, shard := range c.shards {
@@ -196,6 +208,7 @@ func (c *BigCache) Stats() Stats {
 }
 
 // KeyMetadata returns number of times a cached resource was requested.
+// 返回请求缓存资源的次数。
 func (c *BigCache) KeyMetadata(key string) Metadata {
 	hashedKey := c.hash.Sum64(key)
 	shard := c.getShard(hashedKey)
@@ -203,6 +216,7 @@ func (c *BigCache) KeyMetadata(key string) Metadata {
 }
 
 // Iterator returns iterator function to iterate over EntryInfo's from whole cache.
+// 返回一个迭代器函数来遍历整个缓存中的EntryInfo。
 func (c *BigCache) Iterator() *EntryInfoIterator {
 	return newIterator(c)
 }
@@ -216,16 +230,19 @@ func (c *BigCache) onEvict(oldestEntry []byte, currentTimestamp uint64, evict fu
 	return false
 }
 
+// 清理过期key
 func (c *BigCache) cleanUp(currentTimestamp uint64) {
 	for _, shard := range c.shards {
 		shard.cleanUp(currentTimestamp)
 	}
 }
 
+// 获取hashedKey所在分片
 func (c *BigCache) getShard(hashedKey uint64) (shard *cacheShard) {
 	return c.shards[hashedKey&c.shardMask]
 }
 
+// 删除缓存的回调 参数为 key value
 func (c *BigCache) providedOnRemove(wrappedEntry []byte, reason RemoveReason) {
 	c.config.OnRemove(readKeyFromEntry(wrappedEntry), readEntry(wrappedEntry))
 }
@@ -236,6 +253,7 @@ func (c *BigCache) providedOnRemoveWithReason(wrappedEntry []byte, reason Remove
 	}
 }
 
+// 默认的缓存清理回调
 func (c *BigCache) notProvidedOnRemove(wrappedEntry []byte, reason RemoveReason) {
 }
 

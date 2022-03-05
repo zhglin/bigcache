@@ -3,6 +3,7 @@ package bigcache
 // newDefaultHasher returns a new 64-bit FNV-1a Hasher which makes no memory allocations.
 // Its Sum64 method will lay the value out in big-endian byte order.
 // See https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function
+// 默认的hash函数
 func newDefaultHasher() Hasher {
 	return fnv64a{}
 }
@@ -17,6 +18,7 @@ const (
 )
 
 // Sum64 gets the string and returns its uint64 hash value.
+// Sum64获取该字符串并返回它的uint64散列值。
 func (f fnv64a) Sum64(key string) uint64 {
 	var hash uint64 = offset64
 	for i := 0; i < len(key); i++ {
